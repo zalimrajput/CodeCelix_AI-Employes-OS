@@ -22,7 +22,7 @@ This document tracks the long-term context, architectural decisions, and technic
 
 ## 3. Completed Work
 - **Database Schema:** 64+ migrations → 71 tables across 20+ modules (CRM, HR, Sales, Billing) with full RLS multi-tenancy.
-- **Backend + AI Engine:** FastAPI API with **14 AI agents** (master coordinator + 13 specialists) and **59 tools**; model router (Gemini 2.5 Flash/Pro default, OpenRouter optional) with image/screenshot understanding; RAG (pgvector, OpenAI → Gemini embedding fallback).
+- **Backend + AI Engine:** FastAPI API with **14 AI agents** (master coordinator + 13 specialists) and **59 tools**; model router (Gemini 3.5 Flash default, lite fallbacks, OpenRouter optional) with image/screenshot understanding; RAG (pgvector, OpenAI → Gemini embedding fallback).
 - **Integrations:** 13 providers (Google ×4, Microsoft ×3, Slack, Zoho, Xero, WhatsApp, Stripe, R2) — per-org encrypted OAuth tokens with auto-refresh.
 - **Workers:** Celery (email cascade, WhatsApp, documents, embeddings, reports, notifications, follow-up scan, recurring invoices).
 - **Frontend:** Next.js dashboards wired to the backend; auth via Supabase JWT.

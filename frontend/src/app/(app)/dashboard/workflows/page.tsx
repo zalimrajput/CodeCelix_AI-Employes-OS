@@ -1,14 +1,12 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Plus, Workflow as WorkflowIcon, Zap } from "lucide-react";
+import { ArrowRight, Workflow as WorkflowIcon, Zap } from "lucide-react";
 import { Badge, StatusDot } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchWorkflows } from "@/services/data";
 import { motion } from "framer-motion";
-import { toast } from "sonner";
 
 const ACTION_LABELS: Record<string, string> = {
   generate_receipt: "Generate Receipt",
@@ -37,9 +35,6 @@ export default function WorkflowsPage() {
             Chain triggers and actions so your AI workforce handles entire processes hands-free.
           </p>
         </div>
-        <Button onClick={() => toast.info("Workflow builder — drag nodes to compose a new automation.")}>
-          <Plus className="h-4 w-4" /> New Workflow
-        </Button>
       </div>
 
       {isLoading ? (

@@ -21,7 +21,7 @@ graph TD
     Redis --> Workers[Celery Workers]
     Workers -->|SQLAlchemy| Postgres
     
-    Backend -->|API Calls| LLMs[OpenRouter / OpenAI / Anthropic]
+    Backend -->|API Calls| LLMs[Google Gemini / OpenRouter / OpenAI / Anthropic]
 ```
 
 ## 3. Request Lifecycle

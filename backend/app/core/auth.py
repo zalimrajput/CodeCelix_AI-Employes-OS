@@ -4,17 +4,24 @@ Authentication is exclusively based on Supabase-issued access tokens.  The
 backend never hashes passwords, never issues its own JWTs and never stores
 credentials in ``public`` tables.
 
-Two verification paths exist:
+Three verification paths exist:
 
 1. ``SUPABASE_JWT_SECRET`` is set → offline HS256 verification against the
    secret (audience ``authenticated``).  Fast, no network dependency, and the
    default in production.
-2. ``SUPABASE_JWT_SECRET`` is empty → server-side validation against GoTrue
-   (``GET /auth/v1/user``). Kept so local/dev installs without the secret still
-   work; it always makes a network round trip to confirm the token is live.
+2. If the token signature fails the HS256 check (or the secret is unset) →
+   verify against the project's JWKS endpoint via ``kid``.  This covers new
+   Supabase projects using asymmetric signing keys (ES256/RS256), whose
+   tokens the legacy HS256 JWT secret can neither parse-verify nor sign.
+3. ``SUPABASE_JWT_SECRET`` is unset and JWKS verification is unusable →
+   server-side validation against GoTrue (``GET /auth/v1/user``).  Kept so
+   local/dev installs without the secret still work; it always makes a
+   network round trip to confirm the token is live.
 
-Only path 1 vs path 2 is logged — never the token itself.
+Only which path verified the token is logged — never the token itself.
 """
+from typing import Any
+
 import httpx
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -29,12 +36,62 @@ logger = get_logger("auth")
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
+# JWKS cache: (fetched_at_monotonic, keys). Refreshed at most once per 10 min
+# so a rotated signing key keeps working without a per-request fetch.
+_JWKS_TTL_SECONDS = 600
+_jwks_cache: tuple[float, list[dict[str, Any]]] | None = None
+
+
+def _get_jwks() -> list[dict[str, Any]]:
+    """Fetch (and cache) the Supabase project's JWT signing keys."""
+    import time
+
+    global _jwks_cache
+    if _jwks_cache is not None and (time.monotonic() - _jwks_cache[0]) < _JWKS_TTL_SECONDS:
+        return _jwks_cache[1]
+    url = f"{settings.SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json"
+    headers = {"apikey": settings.SUPABASE_ANON_KEY} if settings.SUPABASE_ANON_KEY else {}
+    resp = httpx.get(url, headers=headers, timeout=20)
+    resp.raise_for_status()
+    keys = [k for k in resp.json().get("keys", []) if isinstance(k, dict)]
+    if not keys:
+        raise ValueError("JWKS endpoint returned no keys")
+    _jwks_cache = (time.monotonic(), keys)
+    return keys
+
 
 class AuthError(HTTPException):
     """Raised for any auth failure with a consistent 401 payload."""
 
     def __init__(self, detail: str = "Not authenticated") -> None:
         super().__init__(status_code=401, detail=detail)
+
+
+def _verify_with_jwks(token: str) -> dict[str, Any] | None:
+    """Verify the token against the project's JWKS signing keys.
+
+    Covers Supabase projects using asymmetric signing keys (ES256/RS256).
+    Returns None when verification is not possible so callers can fall back
+    to the next strategy instead of treating this as a hard failure.
+    """
+    try:
+        keys = _get_jwks()
+    except (httpx.HTTPError, ValueError):
+        logger.warning("auth jwks_unavailable")
+        return None
+    try:
+        claims = jwt.decode(
+            token,
+            {"keys": keys},
+            algorithms=["ES256", "RS256"],
+            audience="authenticated",
+            options={"verify_at_hash": False},
+        )
+        return dict(claims)
+    except ExpiredSignatureError:
+        raise AuthError("Token has expired")
+    except JWTError:
+        return None
 
 
 def verify_supabase_token(token: str) -> dict:
@@ -50,9 +107,18 @@ def verify_supabase_token(token: str) -> dict:
             logger.info("auth verification=local_hs256")
             return dict(claims)
         except ExpiredSignatureError:
+            # An expired token fails the same way regardless of signing key —
+            # report expiry directly (jose checks exp before signature).
             logger.info("auth verification=local_hs256 expired_token")
             raise AuthError("Token has expired")
         except JWTError:
+            # Most common cause: the project now signs with asymmetric
+            # keys (ES256/RS256), which the legacy HS256 secret cannot
+            # verify — jose raises "The specified alg value is not allowed".
+            claims = _verify_with_jwks(token)
+            if claims is not None:
+                logger.info("auth verification=jwks_asymmetric")
+                return claims
             logger.info("auth verification=local_hs256 malformed_token")
             raise AuthError("Invalid token")
 

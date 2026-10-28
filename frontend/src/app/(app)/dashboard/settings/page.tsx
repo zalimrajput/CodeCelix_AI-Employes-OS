@@ -6,9 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Building2,
   Check,
-  Copy,
   CreditCard,
-  KeyRound,
   LayoutDashboard,
   Loader2,
   Lock,
@@ -98,7 +96,6 @@ export default function SettingsPage() {
   // server HTML (no hydration mismatch) while still satisfying the
   // react-hooks/set-state-in-effect lint rule.
   const [tab, setTab] = useState("users");
-  const [apiKey, setApiKey] = useState("");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -142,12 +139,6 @@ export default function SettingsPage() {
 
   const myOrgId = session?.user?.orgId;
 
-  function copyKey() {
-    if (!apiKey) return;
-    navigator.clipboard?.writeText(apiKey).catch(() => {});
-    toast.success("API key copied");
-  }
-
   async function toggleModule(key: string, enabled: boolean) {
     const { error } = await updateMyOrgModule(key, enabled);
     if (error) return toast.error(error);
@@ -169,7 +160,6 @@ export default function SettingsPage() {
           { value: "modules", label: "Modules", icon: <Plug className="h-3.5 w-3.5" /> },
           { value: "workspace", label: "Workspace", icon: <Building2 className="h-3.5 w-3.5" /> },
           { value: "roles", label: "Roles", icon: <Shield className="h-3.5 w-3.5" /> },
-          { value: "api", label: "API Keys", icon: <KeyRound className="h-3.5 w-3.5" /> },
           { value: "billing", label: "Billing", icon: <CreditCard className="h-3.5 w-3.5" /> },
           { value: "integrations", label: "Integrations", icon: <Plug className="h-3.5 w-3.5" /> },
         ]}
@@ -311,35 +301,6 @@ export default function SettingsPage() {
               {!rolesLoading && (roles ?? []).length === 0 && (
                 <p className="py-6 text-center text-sm text-slate-500">No roles defined yet.</p>
               )}
-            </CardContent>
-          </>
-        )}
-
-        {tab === "api" && (
-          <>
-            <CardHeader>
-              <CardTitle>API keys</CardTitle>
-              <CardDescription>Programmatic access for ERP integrations and custom workflows.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {apiKey ? (
-                <div className="flex items-center gap-2">
-                  <Input value={apiKey} readOnly className="font-mono" />
-                  <Button variant="secondary" size="icon" onClick={copyKey} aria-label="Copy key">
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                </div>
-              ) : (
-                <p className="text-sm text-slate-500">No API key generated yet.</p>
-              )}
-              <Button
-                onClick={() => {
-                  setApiKey(`sk-ai-os-${crypto.randomUUID?.().slice(0, 8) ?? Date.now().toString(36)}`);
-                  toast.success("API key generated");
-                }}
-              >
-                <KeyRound className="h-4 w-4" /> Generate new key
-              </Button>
             </CardContent>
           </>
         )}

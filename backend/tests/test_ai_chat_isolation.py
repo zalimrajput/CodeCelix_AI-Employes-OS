@@ -12,7 +12,7 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import text
 
-from app.api.v1.ai_chat.routes import list_conversations, list_messages
+from app.api.v1.ai_chat.routes import ConversationCreate, create_conversation, list_conversations, list_messages
 
 
 def _org(db):
@@ -164,6 +164,96 @@ def test_department_isolation_sales_versus_finance(db):
         ) == []
     finally:
         _teardown(db, org)
+
+
+@pytest.mark.db
+def test_create_conversation_department_gate(db):
+    """Regression: POST /conversations must enforce the same department rule
+    as read/send — non-admins cannot bind other departments' AI employees,
+    and the owner bypass must not apply (the creator becomes the owner).
+    """
+    db.rollback()
+    org = _org(db)
+    try:
+        finance = _user(db, org, "Finance User")
+        _assign_role(db, org, finance, "Finance Manager")
+        admin = _user(db, org, "Admin User")
+        _assign_role(db, org, admin, "Company Admin")
+
+        hr_emp = _ai_employee(db, org, "AI HR Assistant", "HR Assistant")
+        fin_emp = _ai_employee(db, org, "AI Finance Assistant", "Finance Assistant")
+
+        # 1) Finance user + HR Assistant -> 403 (cross-department).
+        with pytest.raises(HTTPException) as excinfo:
+            create_conversation(
+                ConversationCreate(ai_employee_id=hr_emp.id, title="x"),
+                db=db,
+                current_user={"sub": str(finance.id)},
+            )
+        assert excinfo.value.status_code == 403
+
+        # 2) Finance user + no employee -> 403 (would fall back to the
+        #    default agent and dodge the department rule via owner bypass).
+        with pytest.raises(HTTPException) as excinfo:
+            create_conversation(
+                ConversationCreate(ai_employee_id=None, title="x"),
+                db=db,
+                current_user={"sub": str(finance.id)},
+            )
+        assert excinfo.value.status_code == 403
+
+        # 3) Finance user + Finance Assistant -> allowed.
+        conv = create_conversation(
+            ConversationCreate(ai_employee_id=fin_emp.id, title="ok"),
+            db=db,
+            current_user={"sub": str(finance.id)},
+        )
+        assert conv.id is not None
+
+        # 4) Company Admin -> allowed with any employee in the org.
+        conv2 = create_conversation(
+            ConversationCreate(ai_employee_id=hr_emp.id, title="admin ok"),
+            db=db,
+            current_user={"sub": str(admin.id)},
+        )
+        assert conv2.id is not None
+    finally:
+        _teardown(db, org)
+
+
+@pytest.mark.db
+def test_cross_org_isolation_company_admin(db):
+    """A Company Admin's 'see all chats' bypass is scoped to THEIR org —
+    they must not see another company's conversations, and foreign
+    conversation ids 404 before any admin check runs."""
+    db.rollback()
+    org_a = _org(db)
+    org_b = _org(db)
+    try:
+        admin_a = _user(db, org_a, "Admin of A")
+        _assign_role(db, org_a, admin_a, "Company Admin")
+        hr_b = _user(db, org_b, "HR of B")
+        _assign_role(db, org_b, hr_b, "HR Manager")
+
+        emp_b = _ai_employee(db, org_b, "AI HR Assistant", "HR Assistant")
+        conv_b = _conversation(db, org_b, hr_b, emp_b)
+
+        # Org A admin's list contains ONLY org A conversations (none exist).
+        admin_a_ids = {str(c.id) for c in list_conversations(db, {"sub": str(admin_a.id)})}
+        assert str(conv_b.id) not in admin_a_ids
+
+        # Direct read of the foreign conversation id -> 404 (org filter runs
+        # before the admin bypass).
+        with pytest.raises(HTTPException) as excinfo:
+            list_messages(
+                conversation_id=conv_b.id,
+                db=db,
+                current_user={"sub": str(admin_a.id)},
+            )
+        assert excinfo.value.status_code == 404
+    finally:
+        _teardown(db, org_b)
+        _teardown(db, org_a)
 
 
 @pytest.mark.db

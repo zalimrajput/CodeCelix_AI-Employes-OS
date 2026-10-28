@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChatInterface } from "@/components/ai/chat-interface";
 import { fetchAIEmployees, fetchConversations, fetchMessages, createConversation } from "@/services/data";
-import { employeeForAgent, agentDisplayName, agentForRoles } from "@/lib/agents";
+import { employeeForAgent, agentDisplayName, agentForRoles, canPickAllAgents, AGENT_KEYS, type AgentKey } from "@/lib/agents";
 import { cn, timeAgo } from "@/lib/utils";
 import { useSession } from "@/hooks/use-session";
 import { toast } from "sonner";
@@ -32,6 +32,10 @@ function ChatPageInner() {
   const agentParam = searchParams.get("agent");
   const employeeParam = searchParams.get("employee");
   const [activeId, setActiveId] = useState<string | null>(null);
+  // Leadership-only agent picker (Super Admin / Company Admin / CEO): when set,
+  // new conversations bind to this agent instead of the role/dashboard default.
+  const [pickerAgent, setPickerAgent] = useState<AgentKey | "">("");
+  const showAgentPicker = canPickAllAgents(session?.user?.roles);
   // No ?agent= / ?employee= → bind new conversations to the agent of the
   // logged-in user's own role (Sales Executive → AI Sales Assistant), not the
   // first AI employee.
@@ -44,6 +48,7 @@ function ChatPageInner() {
       // dashboard (?agent=sales → AI Sales Assistant, or ?employee=<id>);
       // fall back to the first employee.
       const targetEmp =
+        employeeForAgent(employees, pickerAgent || null) ??
         employeeForAgent(employees, agentParam) ??
         (employeeParam ? employees.find((e) => e.id === employeeParam) : undefined) ??
         employeeForAgent(employees, defaultAgent) ??
@@ -76,7 +81,9 @@ function ChatPageInner() {
   const selected = conversations.find((c) => c.id === activeId) ?? conversations[0];
   const selectedEmp = employees.find((e) => e.id === selected?.ai_employee_id);
   // Agent requested by the landing dashboard (e.g. ?agent=sales), if any.
+  // pickerAgent takes priority (explicit leadership choice) over both.
   const landingEmp =
+    employeeForAgent(employees, pickerAgent || null) ??
     employeeForAgent(employees, agentParam) ??
     (employeeParam ? employees.find((e) => e.id === employeeParam) : undefined) ??
     employeeForAgent(employees, defaultAgent);
@@ -99,11 +106,32 @@ function ChatPageInner() {
     <div className="flex h-[calc(100vh-8.5rem)] min-h-[480px] overflow-hidden rounded-2xl border border-border-soft bg-card/50 backdrop-blur-xl">
       {/* Conversations */}
       <aside className="hidden w-72 shrink-0 flex-col border-r border-border-soft sm:flex">
-        <div className="flex items-center justify-between border-b border-border-soft p-4">
+        <div className="flex items-center justify-between gap-2 border-b border-border-soft p-4">
           <h2 className="text-sm font-bold text-white">Conversations</h2>
-          <Button size="iconSm" onClick={handleNewChat} aria-label="New chat">
-            <Plus className="h-4 w-4" />
-          </Button>
+          {showAgentPicker ? (
+            <div className="flex items-center gap-1.5">
+              <select
+                aria-label="Pick AI agent for the next chat"
+                value={pickerAgent}
+                onChange={(e) => setPickerAgent(e.target.value as AgentKey | "")}
+                className="max-w-[9rem] cursor-pointer rounded-lg border border-border-soft bg-card px-1.5 py-1 text-xs text-slate-200 outline-none focus:border-primary/50"
+              >
+                <option value="">Auto — default agent</option>
+                {AGENT_KEYS.map((key) => (
+                  <option key={key} value={key}>
+                    {agentDisplayName(key) ?? key}
+                  </option>
+                ))}
+              </select>
+              <Button size="iconSm" onClick={handleNewChat} aria-label="New chat">
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : (
+            <Button size="iconSm" onClick={handleNewChat} aria-label="New chat">
+              <Plus className="h-4 w-4" />
+            </Button>
+          )}
         </div>
         <div className="flex-1 space-y-1 overflow-y-auto p-2 no-scrollbar">
           {isLoading ? (
@@ -168,6 +196,21 @@ function ChatPageInner() {
                 </p>
               )}
             </div>
+            {showAgentPicker && (
+              <select
+                aria-label="Pick AI agent"
+                value={pickerAgent}
+                onChange={(e) => setPickerAgent(e.target.value as AgentKey | "")}
+                className="cursor-pointer rounded-xl border border-border-soft bg-card px-3 py-2 text-sm text-slate-200 outline-none focus:border-primary/50"
+              >
+                <option value="">Auto — default agent</option>
+                {AGENT_KEYS.map((key) => (
+                  <option key={key} value={key}>
+                    {agentDisplayName(key) ?? key}
+                  </option>
+                ))}
+              </select>
+            )}
             <Button onClick={handleNewChat}><Plus className="h-4 w-4" /> New conversation</Button>
           </div>
         )}

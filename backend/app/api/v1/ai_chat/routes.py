@@ -147,6 +147,16 @@ def create_conversation(
         ).first()
         if employee is None:
             raise HTTPException(status_code=404, detail="AI employee not found")
+        # Department isolation — same rule as read/send. The owner bypass does
+        # NOT apply here: the creator becomes the owner, so allowing it would
+        # nullify the check and let any member start chats with other
+        # departments' AI employees.
+        if not can_see_all_chats(db, me) and employee.role not in allowed_agent_roles(db, me):
+            raise HTTPException(status_code=403, detail="You don't have access to this AI employee")
+    elif not can_see_all_chats(db, me):
+        # Non-admins must bind a concrete employee of their own department —
+        # an unbound conversation falls back to the default agent.
+        raise HTTPException(status_code=403, detail="Choose an AI employee of your department")
     conversation = AIConversation(
         organization_id=me.organization_id,
         user_id=me.id,

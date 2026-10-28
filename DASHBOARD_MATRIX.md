@@ -1,6 +1,6 @@
 # Dashboard Matrix — Agents & Human Roles
 
-**Snapshot date:** 2026-08-12 · **Source of truth:** `frontend/src/lib/dashboards.ts`, `frontend/src/lib/agents.ts`, `frontend/src/lib/roles.ts`, and the dashboard pages under `frontend/src/app/(app)/dashboard/**`.
+**Snapshot date:** 2026-10-28 · **Source of truth:** `frontend/src/lib/dashboards.ts`, `frontend/src/lib/agents.ts`, `frontend/src/lib/roles.ts`, and the dashboard pages under `frontend/src/app/(app)/dashboard/**`.
 
 This document answers two questions:
 1. **Which AI agent works with which dashboard?**
@@ -72,6 +72,9 @@ Each dashboard's **"Ask AI …" button** pre-binds a new chat to a specialist ag
 
 ### Chat without a dashboard link
 When a user opens **AI Chat directly** (no `?agent=`), the chat binds to the agent of the user's own role (see `ROLE_TO_AGENT` in section 3).
+
+### Agent picker (leadership only)
+**Super Admin, Company Admin and CEO** additionally get an **agent picker** in AI Chat (`canPickAllAgents` in `frontend/src/lib/agents.ts`): when starting a new conversation they may choose **any of the 13 agents**, overriding both the role default and any `?agent=` deep link. Every other role is fixed to its single dashboard agent — no picker is shown for them.
 
 ---
 
@@ -150,6 +153,7 @@ Legacy roles (`Owner` / `Admin` / `Employee` from migration 0059) behave as **Co
 | Dashboard registry + role access | `frontend/src/lib/dashboards.ts` (mirrors `supabase/migrations/0060_platform_roles_and_seeds.sql`) |
 | Human roles + home paths + admin gating | `frontend/src/lib/roles.ts` |
 | Agent keys, `AGENT_EMPLOYEE_ROLES`, `ROLE_TO_AGENT` | `frontend/src/lib/agents.ts` |
+| Leadership agent picker gate (`canPickAllAgents`) | `frontend/src/lib/agents.ts` + `frontend/src/app/(app)/dashboard/chat/page.tsx` |
 | Sidebar nav filtering | `frontend/src/components/layout/sidebar.tsx` |
 | Layout role guard / redirects | `frontend/src/app/(app)/layout.tsx` |
 | Backend agent resolution (role → agent) | `backend/app/ai/agents/__init__.py` (`resolve_agent`) |
