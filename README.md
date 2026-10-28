@@ -4,6 +4,8 @@
 
 AI Employee OS is a multi-tenant SaaS platform that acts as an all-in-one operating system for businesses, augmented with specialized AI agents. Businesses get company dashboards (CRM, Sales, Finance, HR, …) staffed by AI employees that can act through 59 tools — sending email, creating quotations, scheduling meetings, running reports — while a human team supervises through role-based access.
 
+Live deployment: [https://code-celix-ai-employes-os.vercel.app](https://code-celix-ai-employes-os.vercel.app)
+
 ---
 
 ## Architecture
@@ -67,6 +69,8 @@ pip install -r requirements.txt
 # configure .env (see SYSTEM_SETUP.md §9 for every key)
 uvicorn app.main:app --reload --port 8000
 ```
+
+Live: [https://code-celix-ai-employes-os.vercel.app](https://code-celix-ai-employes-os.vercel.app)
 
 API docs at `http://localhost:8000/docs`. Health check: `GET /health`.
 
