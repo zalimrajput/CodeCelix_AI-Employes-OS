@@ -2,7 +2,7 @@
 
 **Status:** Functional multi-tenant AI platform (development build)
 
-AI Employee OS is a multi-tenant SaaS platform that acts as an all-in-one operating system for businesses, augmented with specialized AI agents. Businesses get company dashboards (CRM, Sales, Finance, HR, …) staffed by AI employees that can act through 59 tools — sending email, creating quotations, scheduling meetings, running reports — while a human team supervises through role-based access.
+AI Employee OS is a multi-tenant SaaS platform that acts as an all-in-one operating system for businesses, augmented with specialized AI agents. Businesses get company dashboards (CRM, Sales, Finance, HR, …) staffed by AI employees that can act through 61 tools — sending email, creating quotations, scheduling meetings, running reports — while a human team supervises through role-based access.
 
 Live deployment: [https://code-celix-ai-employes-os.vercel.app](https://code-celix-ai-employes-os.vercel.app)
 
@@ -27,7 +27,7 @@ FastAPI backend (:8000, uvicorn --reload)
 - **Frontend:** Next.js (App Router) + React Query + Tailwind; auth via Supabase.
 - **Backend:** FastAPI + SQLAlchemy; per-org tenancy enforced by RLS + `organization_id` filters.
 - **AI:** Gemini model chain with automatic fallbacks; native tool-calling with an envelope fallback path.
-- **Database:** PostgreSQL (Supabase) — 71 tables with Row Level Security enforcing multi-tenancy.
+- **Database:** PostgreSQL (Supabase) — 78 tables with Row Level Security enforcing multi-tenancy.
 
 Full details: **[SYSTEM_SETUP.md](SYSTEM_SETUP.md)** (agents, tools, integrations, workers, workflows, configuration) and **[ARCHITECTURE.md](ARCHITECTURE.md)**.
 
@@ -50,7 +50,7 @@ supabase start          # local Postgres + GoTrue + Studio
 supabase db push        # apply migrations (supabase/migrations/**)
 ```
 
-Migrations seed the default 12-role model, dashboards and AI employees (`0059`/`0060`), enable RLS with `current_org_id()`, and create all 71 tables. Point `DATABASE_URL` in `backend/.env` at the local Postgres connection string Supabase prints (`supabase status`).
+Migrations seed the default 11-role model (1 platform + 10 company; `0069` removed `Employee/User`), the dashboards and AI employees (`0059`/`0060`), enable RLS with `current_org_id()`, and create all 78 tables. Point `DATABASE_URL` in `backend/.env` at the local Postgres connection string Supabase prints (`supabase status`).
 
 Seeding demo users (optional, dev only):
 
@@ -84,7 +84,7 @@ Backend endpoints verify Supabase-issued JWTs with a three-path strategy (`app/c
 
 ### LLM configuration
 
-- `DEFAULT_AI_MODEL=gemini-3.5-flash` with `AI_MODEL_FALLBACKS=gemini-3.5-flash-lite,gemini-3.1-flash-lite`.
+- `DEFAULT_AI_MODEL=gemini-3.5-flash` with `AI_MODEL_FALLBACKS=gemini-3.5-flash-lite,gemini-3.1-flash-lite` (what this repo's `.env` runs; the shipped `backend/.env.example` still defaults to the more conservative `gemini-2.5-flash` + `gemini-2.5-flash-lite,gemini-2.0-flash-lite` chain).
 - The Google AI key is the live provider; `OPENROUTER_API_KEY` is optional (widens the fallback pool).
 - Model ids are also stored per-row on `ai_employees.model` — if Google retires a model id, both `.env` and that column must point at models that still respond.
 
@@ -93,7 +93,7 @@ Backend endpoints verify Supabase-issued JWTs with a three-path strategy (`app/c
 Three layers, enforced in this order on every chat endpoint (list / read / send / voice / stream / create):
 
 1. **Authentication** — every endpoint requires a valid Supabase JWT (three-path verification above).
-2. **Cross-tenant isolation** — every query filters `organization_id == caller's org` *before* any bypass runs, so a foreign conversation id 404s even for admins. Company Admin's "see all" applies only inside their own company. Backed by RLS on all 71 tables (`0052_rls_full.sql` → `organization_id = current_org_id()`).
+2. **Cross-tenant isolation** — every query filters `organization_id == caller's org` *before* any bypass runs, so a foreign conversation id 404s even for admins. Company Admin's "see all" applies only inside their own company. Backed by RLS on all 78 tables (`0052_rls_full.sql` → `organization_id = current_org_id()`).
 3. **Department isolation** — non-admin users only see/create conversations bound to their department's AI employees (`chat_access.py`): Finance ↔ Finance Assistant/Accountant, HR ↔ HR Assistant, Sales ↔ Sales Assistant, etc. Company Admin, CEO, legacy Owner/Admin and platform Super Admin see all conversations in their org. Platform Super Admin additionally has cross-org views by design (platform oversight).
 
 Covered by regression tests in `backend/tests/test_ai_chat_isolation.py` (department isolation, admin org scoping, cross-org 404s, the `create_conversation` gate).
@@ -133,7 +133,7 @@ Configure `frontend/.env.local` with `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_S
 
 ## AI agents (14)
 
-Registry: `backend/app/ai/agents/` — **13 specialists + the master coordinator**. `resolve_agent(role)` matches an AI employee's role (exact match, then synonyms).
+Registry: `backend/app/ai/agents/` — **12 specialists + the master coordinator**, plus a `general` fallback assistant used when nothing else matches (14 definitions in `ALL_AGENTS` + `DEFAULT_AGENT`). `resolve_agent(role)` matches an AI employee's role (exact match, then synonyms).
 
 | Key | Display name | Focus |
 |---|---|---|
@@ -150,7 +150,7 @@ Registry: `backend/app/ai/agents/` — **13 specialists + the master coordinator
 | `inventory` | Inventory Manager | Stock, suppliers |
 | `procurement` | Procurement Assistant | Purchase orders, suppliers |
 | `executive` | Executive Assistant | Meetings, approvals, exec reports |
-| `general` | AI Employee (default) | General assistant fallback |
+| `general` | AI Employee (General Assistant) | Fallback when no agent matches the role |
 
 **Delegation:** only the master has `delegate_task` — it hands self-contained sub-tasks to any specialist (never to itself), then synthesizes one combined answer. Each specialist runs as a full agent turn with its own tools.
 
@@ -158,7 +158,7 @@ Registry: `backend/app/ai/agents/` — **13 specialists + the master coordinator
 
 ---
 
-## Dashboards & roles (14 dashboards, 12 human roles)
+## Dashboards & roles (14 dashboards, 11 human roles)
 
 Each dashboard pre-binds an AI agent through `/dashboard/chat?agent=<key>`:
 
@@ -174,21 +174,21 @@ Each dashboard pre-binds an AI agent through `/dashboard/chat?agent=<key>`:
 | Customer Support | `/dashboard/support` | Customer Support | support |
 | Marketing | `/dashboard/marketing` | Marketing Manager | marketing |
 | Operations | `/dashboard/operations` | Operations Manager | inventory |
-| Employee | `/dashboard/employee` | Employee/User | executive (per-employee) |
+| Employee (personal) | `/dashboard/employee` | legacy `Employee` rows only | — |
 | AI Employees | `/dashboard/employees` | Super Admin, Company Admin, CEO | per-employee |
 | Reports & Analytics | `/dashboard/analytics` | Super Admin, Company Admin, CEO + all managers | — |
 | Settings & Integrations | `/dashboard/settings` | Super Admin, Company Admin, CEO | — |
 
 - **Super Admin** sees every dashboard (platform-wide, cross-tenant views).
 - **Company Admin + CEO** see the full company set (everything except the platform dashboard).
-- **Department roles** see exactly their own dashboards; **legacy `Owner`/`Admin`** rows map to Company Admin.
+- **Department roles** see exactly their own dashboards; **legacy `Owner`/`Admin`** rows map to Company Admin. The former `Employee/User` role was removed (migration 0069), which also dropped the seeded `Employee Dashboard` row — the personal dashboard survives in the frontend registry (`frontend/src/lib/dashboards.ts`) for legacy `Employee` members. Three legacy role names (`Owner`, `Admin`, `Employee`) still exist on pre-0069 orgs.
 - Module gating: admins can disable modules per-org, which hides the matching dashboards.
 
 Full matrix incl. which agent answers each chat: **[DASHBOARD_MATRIX.md](DASHBOARD_MATRIX.md)**.
 
 ---
 
-## AI tools (59)
+## AI tools (61)
 
 `backend/app/ai/tools/` — organized by domain:
 

@@ -2,8 +2,7 @@
 
 Creates (idempotently):
   * superadmin@demo.com  — platform Super Admin (no org, platform_roles row)
-  * orgadmin@demo.com    — Company Admin of "Demo Company"
-  * employee@demo.com    — Employee/User of "Demo Company"
+  * orgadmin@demo.com    — Company Admin of "Demo Company"   * employee@demo.com    — Customer Support member of "Demo Company"
 
 The org is created via a plain INSERT so the trg_seed_default_roles trigger
 (0059/0060) seeds the 11 roles + 12 AI employees + 14 dashboards for it.
@@ -133,7 +132,9 @@ def main() -> None:
                 print(f"[super_admin] {acct['email']} (no org)")
             else:
                 # Company role for the demo org.
-                role_name = "Company Admin" if acct["kind"] == "org_admin" else "Employee/User"
+                role_name = (
+                    "Company Admin" if acct["kind"] == "org_admin" else "Customer Support"
+                )
                 role = db.execute(
                     text("SELECT id FROM roles WHERE organization_id = :oid AND name = :rn"),
                     {"oid": org_id, "rn": role_name},

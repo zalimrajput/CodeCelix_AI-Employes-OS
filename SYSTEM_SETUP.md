@@ -54,11 +54,11 @@ FastAPI backend (:8000, uvicorn --reload)
 
 ## 3. AI Agents (`backend/app/ai/agents/`)
 
-Registry: `ALL_AGENTS` (13 specialists + master), `resolve_agent(role)` picks by exact role match then synonyms. The **Master Coordinator** plans multi-step work and delegates to specialists via `delegate_task`; it can also send email directly.
+Registry: `ALL_AGENTS` (12 specialists + master) plus the `general` default, `resolve_agent(role)` picks by exact role match then synonyms. The **Master Coordinator** plans multi-step work and delegates to specialists via `delegate_task`; it can also send email directly.
 
 | Key | Display | Role | Tools (count) |
 |---|---|---|---|
-| `sales` | Sales Agent | Sales Manager | 23 |
+| `sales` | Sales Agent | Sales Manager | 25 |
 | `support` | Customer Support | Customer Support | 7 |
 | `hr` | HR Assistant | HR Manager | 5 |
 | `recruiter` | Recruiter | Recruiter | 6 |
@@ -69,12 +69,12 @@ Registry: `ALL_AGENTS` (13 specialists + master), `resolve_agent(role)` picks by
 | `legal` | Legal Assistant | Legal | 4 |
 | `inventory` | Inventory Manager | Operations Manager | 4 |
 | `procurement` | Procurement Manager | Procurement Manager | 3 |
-| `executive` | Executive Assistant | CEO / Executive | 16 |
+| `executive` | Executive Assistant | CEO / Executive | 17 |
 | `master` | AI Manager | Master Coordinator | 3 |
 | `general` (default) | AI Employee | General Assistant | 5 |
 
 ### Allowed tools per agent
-- **sales (23):** search_crm, get_customer, list_leads, list_deals, create_activity, summarize_customer, list_quotations, create_reminder, list_reminders, create_meeting, list_meetings, summarize_meeting, transcribe_meeting_audio, send_email, send_quotation_email, submit_quotation_for_approval, classify_email_thread, summarize_email_thread, zoho_create_lead, zoho_list_leads, drive_upload_file, sheets_append_row, slack_post_message
+- **sales (25):** search_crm, get_customer, create_customer, list_leads, list_deals, create_activity, summarize_customer, list_quotations, create_reminder, list_reminders, create_meeting, list_meetings, summarize_meeting, transcribe_meeting_audio, send_email, send_quotation_email, submit_quotation_for_approval, classify_email_thread, summarize_email_thread, zoho_create_lead, zoho_create_customer, zoho_list_leads, drive_upload_file, sheets_append_row, slack_post_message
 - **support (7):** search_crm, get_customer, summarize_customer, list_tasks, create_activity, classify_email_thread, summarize_email_thread
 - **hr (5):** search_crm, list_employees, list_leave_requests, create_task, generate_productivity_report
 - **recruiter (6):** search_crm, list_candidates, create_task, create_meeting, summarize_meeting, transcribe_meeting_audio
@@ -85,13 +85,13 @@ Registry: `ALL_AGENTS` (13 specialists + master), `resolve_agent(role)` picks by
 - **legal (4):** search_knowledge, get_document, analyze_document, search_crm
 - **inventory (4):** search_crm, list_inventory, list_suppliers, create_task
 - **procurement (3):** list_purchase_orders, list_suppliers, create_task
-- **executive (16):** slack_post_message, search_crm, list_tasks, create_meeting, summarize_meeting, transcribe_meeting_audio, search_knowledge, get_document, approve_quotation, reject_quotation, generate_revenue_report, generate_expense_report, generate_sales_pipeline_report, generate_productivity_report, generate_forecast_report, generate_customer_cohort_report
+- **executive (17):** slack_post_message, search_crm, list_tasks, send_email, create_meeting, summarize_meeting, transcribe_meeting_audio, search_knowledge, get_document, approve_quotation, reject_quotation, generate_revenue_report, generate_expense_report, generate_sales_pipeline_report, generate_productivity_report, generate_forecast_report, generate_customer_cohort_report
 - **master (3):** delegate_task, send_email, send_quotation_email
 - **general / default (5):** search_crm, get_customer, list_tasks, search_knowledge, get_document
 
 ---
 
-## 4. AI Tools — full registry (59 tools, `backend/app/ai/tools/`)
+## 4. AI Tools — full registry (61 tools, `backend/app/ai/tools/`)
 
 ### CRM (`crm_tools.py`)
 | Tool | Purpose |
@@ -102,6 +102,7 @@ Registry: `ALL_AGENTS` (13 specialists + master), `resolve_agent(role)` picks by
 | list_deals | List deals (optionally by stage) |
 | create_activity | Log an activity/note on a CRM target |
 | summarize_customer | Relationship summary + health assessment |
+| create_customer | Create a new CRM customer |
 
 ### Email (`email_tools.py`)
 | Tool | Purpose |
@@ -172,7 +173,7 @@ Registry: `ALL_AGENTS` (13 specialists + master), `resolve_agent(role)` picks by
 | Tool | Purpose |
 |---|---|
 | slack_post_message | Post to connected Slack workspace |
-| zoho_create_lead / zoho_list_leads | Mirror leads to/from Zoho CRM |
+| zoho_create_lead / zoho_create_customer / zoho_list_leads | Mirror leads/customers to and from Zoho CRM |
 | xero_create_invoice / xero_list_invoices | Mirror invoices to/from Xero |
 | sheets_append_row | Append row / create a Google Sheet |
 | drive_upload_file | Upload to connected Google Drive |

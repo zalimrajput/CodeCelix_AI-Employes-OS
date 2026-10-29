@@ -38,6 +38,18 @@ class Settings(BaseSettings):
     # ---------------------------------------------------------------- ai / llm
     OPENROUTER_API_KEY: Optional[str] = None
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    # When true, OpenAI/Anthropic/Google completions that would fail because
+    # the matching direct provider key is missing or invalid will silently retry
+    # through OpenRouter when OPENROUTER_API_KEY is configured. This lets a
+    # single OpenRouter key cover the whole fallback chain without requiring a
+    # key for every provider.
+    #
+    # When false (default), those providers fail the normal way so a
+    # missing/invalid key produces a loud, fast error instead of a silent retry.
+    OPENROUTER_AUTO_FALLBACK: bool = False
+    # OpenRouter is the primary gateway and already routes catalog models (vendor
+    # prefixes / ":free" variants) through the same API. OPENROUTER_AUTO_FALLBACK
+    # extends that reach to direct OpenAI/Anthropic/Google model ids too.
     # Gemini 2.5 Flash/Pro support images (screenshots, attached photos) via
     # inline base64 parts — keep multimodal-capable models in the default chain.
     DEFAULT_AI_MODEL: str = "gemini-2.5-flash"

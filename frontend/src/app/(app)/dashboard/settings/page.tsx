@@ -29,7 +29,7 @@ import { useSession } from "@/hooks/use-session";
 import { api } from "@/lib/api/client";
 import { addDepartment, fetchOrgDepartments, fetchOrgMembers, fetchOrgModules, fetchOrgRoles, inviteMember, removeDepartment, removeMember, updateMyOrgModule } from "@/services/admin";
 import { MODULE_BY_KEY, TOGGLEABLE_MODULES } from "@/lib/modules";
-import { ROLE_META } from "@/lib/roles";
+import { ROLE_META, ROLES } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
@@ -71,6 +71,9 @@ const KEY_INTEGRATIONS = [
 const PROVIDER_LABEL: Record<string, string> = Object.fromEntries(
   OAUTH_INTEGRATIONS.map((i) => [i.provider, i.name])
 );
+
+/** Default role for new members (the old "Employee/User" role was removed). */
+const DEFAULT_INVITE_ROLE: string = ROLES.SALES_EXECUTIVE;
 
 /** Turn common provider error text into an actionable hint. */
 function oauthErrorHint(detail: string, provider: string): string {
@@ -468,7 +471,7 @@ function UsersTab({
   const [showInvite, setShowInvite] = useState(false);
   const [saving, setSaving] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
-  const [form, setForm] = useState({ full_name: "", email: "", password: "", role_name: "Employee/User" });
+  const [form, setForm] = useState({ full_name: "", email: "", password: "", role_name: DEFAULT_INVITE_ROLE });
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();
@@ -478,7 +481,7 @@ function UsersTab({
     setSaving(false);
     if (error) return toast.error(error);
     toast.success(`${form.full_name || form.email} added to the team`);
-    setForm({ full_name: "", email: "", password: "", role_name: "Employee/User" });
+    setForm({ full_name: "", email: "", password: "", role_name: DEFAULT_INVITE_ROLE });
     setShowInvite(false);
     queryClient.invalidateQueries({ queryKey: ["org-members"] });
   }
@@ -533,7 +536,12 @@ function UsersTab({
                     onChange={(e) => setForm((f) => ({ ...f, role_name: e.target.value }))}
                     className="h-11 w-full rounded-xl border border-border-soft bg-card-soft/60 px-3 text-sm text-white focus:border-primary/60 focus:outline-none"
                   >
-                    {(roles.length > 0 ? roles : [{ id: "emp", name: "Employee/User" }]).map((r) => (
+                    {(roles.length > 0
+                      ? roles
+                      : // Seeded role list should always exist; fallback keeps
+                        // the dropdown usable while roles are still loading.
+                        [{ id: "fallback", name: DEFAULT_INVITE_ROLE }]
+                    ).map((r) => (
                       <option key={r.id} value={r.name}>{r.name}</option>
                     ))}
                   </select>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Bot, Kanban, Workflow, MessageSquare, ArrowRight, Plus } from "lucide-react";
+import { Bot, Kanban, Workflow, MessageSquare, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { StatCard } from "@/components/dashboard/stat-card";
@@ -32,9 +32,6 @@ export default function DashboardPage() {
           </h1>
         </div>
         <div className="flex gap-2">
-          <Button variant="secondary" onClick={() => (window.location.href = "/dashboard/employees")}>
-            <Plus className="h-4 w-4" /> Hire AI
-          </Button>
           <Link href="/dashboard/chat?agent=master">
             <Button>
               <MessageSquare className="h-4 w-4" /> Delegate a task

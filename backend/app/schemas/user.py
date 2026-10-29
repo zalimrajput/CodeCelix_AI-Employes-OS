@@ -53,8 +53,8 @@ class UserCreate(BaseModel):
 
     phone: str | None = None
 
-    # Optional role name to assign (e.g. "Sales Manager", "Employee/User").
-    # Defaults to "Employee/User" when omitted.
+    # Optional role name to assign (e.g. "Sales Manager", "Customer Support").
+    # No role is assigned when omitted.
     role_name: str | None = None
 
 

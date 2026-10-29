@@ -18,7 +18,8 @@ def create_user(
     No password is stored in the local database - Supabase Auth owns the
     credentials. The handle_new_user trigger creates the profile row when the
     auth user is inserted, so here we only fill in the org / profile fields.
-    The requested role (default "Employee/User") is assigned via user_roles.
+    The requested role (must exist in the org; defaults to none assigned when
+    omitted) is assigned via user_roles.
     """
     validate_password(
         data.password
@@ -81,9 +82,10 @@ def create_user(
 
     db.flush()
 
-    # Assign the requested role (default "Employee/User"). The role must
-    # belong to the same organization; skip silently if it does not exist.
-    role_name = (data.role_name or "Employee/User").strip()
+    # Assign the requested role (optional; the frontend invite form always
+    # sends one). The role must belong to the same organization; an empty or
+    # unknown name means no role is assigned (the member can be updated later).
+    role_name = (data.role_name or "").strip()
     role = db.query(Role).filter(
         Role.organization_id == data.organization_id,
         Role.name == role_name,

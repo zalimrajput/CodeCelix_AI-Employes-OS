@@ -2,9 +2,11 @@
 // Mirrors supabase/migrations/0059_seed_default_roles.sql (legacy 3-role seed)
 // and 0060_platform_roles_and_seeds.sql (full 12-role model):
 //   1 platform role: Super Admin
-//   11 company roles: Company Admin, CEO / Executive, Sales Manager, Sales
+//   10 company roles: Company Admin, CEO / Executive, Sales Manager, Sales
 //   Executive, HR Manager, Finance Manager, Accountant, Customer Support,
-//   Marketing Manager, Operations Manager, Employee/User.
+//   Marketing Manager, Operations Manager.
+// (The former "Employee/User" role was removed — legacy \"Employee\" rows from
+// 0059 orgs keep their access below.)
 
 export const ROLES = {
   SUPER_ADMIN: "Super Admin",
@@ -19,7 +21,6 @@ export const ROLES = {
   CUSTOMER_SUPPORT: "Customer Support",
   MARKETING_MANAGER: "Marketing Manager",
   OPERATIONS_MANAGER: "Operations Manager",
-  EMPLOYEE: "Employee/User",
 
   // Legacy names from migration 0059 (existing orgs keep these rows).
   LEGACY_OWNER: "Owner",
@@ -93,11 +94,6 @@ export const ROLE_META: Record<string, RoleMeta> = {
     badgeClass: "bg-primary/15 border border-primary/40 text-primary-soft",
     description: "Manages tasks and workflows",
   },
-  [ROLES.EMPLOYEE]: {
-    label: "Employee",
-    badgeClass: "bg-slate-500/15 border border-slate-500/40 text-slate-300",
-    description: "Uses assigned tools",
-  },
   [ROLES.LEGACY_OWNER]: {
     label: "Owner",
     badgeClass:
@@ -128,7 +124,6 @@ const ROLE_PRIORITY: Record<string, number> = {
   [ROLES.SALES_EXECUTIVE]: 12,
   [ROLES.ACCOUNTANT]: 11,
   [ROLES.CUSTOMER_SUPPORT]: 10,
-  [ROLES.EMPLOYEE]: 9,
   [ROLES.LEGACY_OWNER]: 19,
   [ROLES.LEGACY_ADMIN]: 16,
   [ROLES.LEGACY_EMPLOYEE]: 9,
@@ -174,7 +169,6 @@ const HOME_BY_ROLE: Record<string, string> = {
   [ROLES.CUSTOMER_SUPPORT]: "/dashboard/support",
   [ROLES.MARKETING_MANAGER]: "/dashboard/marketing",
   [ROLES.OPERATIONS_MANAGER]: "/dashboard/operations",
-  [ROLES.EMPLOYEE]: "/dashboard/employee",
   [ROLES.LEGACY_OWNER]: "/dashboard",
   [ROLES.LEGACY_ADMIN]: "/dashboard",
   [ROLES.LEGACY_EMPLOYEE]: "/dashboard/employee",

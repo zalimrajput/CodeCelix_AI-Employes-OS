@@ -70,9 +70,11 @@ def _keyword_score(query_lower: str, haystack: str) -> int:
 
 
 def retrieve_documents(
-    db: Session, organization_id, query: str, limit: int = 4
+    db: Session, organization_id, query: str | None, limit: int = 4
 ) -> list[dict]:
     """Return document text chunks relevant to the query."""
+    if not (query or "").strip():
+        return []
     vector = _embed_query(query)
     if vector is not None:
         from sqlalchemy import text
@@ -120,8 +122,10 @@ def retrieve_documents(
 
 
 def retrieve_articles(
-    db: Session, organization_id, query: str, limit: int = 4
+    db: Session, organization_id, query: str | None, limit: int = 4
 ) -> list[dict]:
+    if not (query or "").strip():
+        return []
     vector = _embed_query(query)
     if vector is not None:
         rows = _vector_search_articles(db, organization_id, vector, limit)

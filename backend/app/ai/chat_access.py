@@ -29,8 +29,8 @@ HUMAN_ROLE_TO_AGENT_ROLES: dict[str, set[str]] = {
     "Customer Support": {"Customer Support Agent"},
     "Marketing Manager": {"Marketing Assistant"},
     "Operations Manager": {"Inventory Manager", "Procurement Assistant"},
-    "Employee/User": {"Executive Assistant"},
-    # Legacy names from migration 0059.
+    # Legacy migration-0059 "Employee" rows (the assignable Employee/User role
+    # was removed) keep the personal Executive assistant mapping.
     "Employee": {"Executive Assistant"},
 }
 

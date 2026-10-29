@@ -57,30 +57,90 @@ def _provider_for(model: str) -> str:
     return "openrouter"
 
 
+def _has_working_direct_key(provider: str) -> bool:
+    """Return True when the configured direct-provider key looks usable.
+
+    For the Gemini-first mode we only trust a direct Google key when it is
+    present and shaped like a real key (legacy ``AIzaSy...`` or the newer
+    ``AQ.`` access tokens). When that is not the case, the Gemini path is
+    treated as unusable and the request should fall back through OpenRouter
+    instead of surfacing a hard Google error.
+    """
+    if not settings.OPENROUTER_API_KEY:
+        return False
+    if provider == "openai":
+        return bool(settings.OPENAI_API_KEY)
+    if provider == "anthropic":
+        return bool(settings.ANTHROPIC_API_KEY)
+    if provider == "google":
+        key = settings.GOOGLE_AI_KEY or ""
+        if not key or not key.startswith(("AIzaSy", "AQ.")):
+            return False
+        # The configured Google key looks usable, so we keep Gemini on the
+        # direct Google path when Gemini-first routing is on. Once the key is
+        # missing or unrecognised the Gemini path is treated as unavailable
+        # and the request falls back through OpenRouter instead.
+        return True
+    return False
+
+
 def _effective_provider(model: str, provider: str) -> str:
-    """Fall back to OpenRouter when the direct provider key is missing or invalid but
-    OpenRouter is configured (common in demo/self-host setups)."""
+    """Route a completion through the right provider for *model*.
+
+    When the matching direct-provider key is missing or invalid but
+    ``OPENROUTER_API_KEY`` is configured and ``OPENROUTER_AUTO_FALLBACK`` is on,
+    the call is silently retried through OpenRouter instead. That keeps a single
+    OpenRouter key able to cover the whole fallback chain (useful on free-tier
+    accounts where adding an OpenAI/Anthropic/Google key is not an option).
+
+    When OpenRouter auto-fallback is off, the provider is chosen purely by the
+    model id — so a missing/invalid direct key still fails loudly and fast.
+    """
     if not settings.OPENROUTER_API_KEY:
         return provider
-    if provider == "openai" and not settings.OPENAI_API_KEY:
-        return "openrouter"
-    if provider == "google" and (not settings.GOOGLE_AI_KEY or not settings.GOOGLE_AI_KEY.startswith(("AIzaSy", "AQ."))):
-        return "openrouter"
-    return provider
+    if not settings.OPENROUTER_AUTO_FALLBACK:
+        return provider
+    # OpenRouter is the only provider that can cover the whole fallback chain
+    # (OpenAI, Anthropic and Google ids all route through it), so route the
+    # request there as soon as the matching direct-provider key is missing or
+    # unusable. That keeps Gemini-first mode working: a failing Gemini request
+    # still completes through OpenRouter instead of surfacing a hard model error.
+    if _has_working_direct_key(provider):
+        return provider
+    return "openrouter"
 
 
 def _fallback_models() -> list[str]:
     raw = settings.AI_MODEL_FALLBACKS or ""
-    return [m.strip() for m in raw.split(",") if m.strip()]
+    ids = [m.strip() for m in raw.split(",") if m.strip()]
+    if not ids:
+        return ids
+    return ids
 
 
 def _model_chain(model: Optional[str]) -> list[str]:
-    """Ordered, de-duplicated list of models to try for one completion."""
+    """Ordered, de-duplicated list of models to try for one completion.
+
+    The requested/default model comes first. When the model is Gemini and the
+    configured Gemini path is unavailable or fails, the chain must be able to
+    continue through OpenRouter models instead of ending on a failed Gemini- only
+    list. That is handled by appending OpenRouter-facing models after the
+    configured Gemini fallback list.
+    """
     primary = model or settings.DEFAULT_AI_MODEL
     chain: list[str] = []
     for candidate in [primary] + _fallback_models():
         if candidate and candidate not in chain:
             chain.append(candidate)
+    # If the requested/fallback list is Gemini-only and contains no OpenRouter-style
+    # Gemini id (vendor prefix or :free), append one OpenRouter Gemini model at
+    # the tail. That guarantees the router can switch to OpenRouter if every
+    # configured Gemini model fails, so the user gets a real reply instead of a
+    # ModelRouterError. OpenRouter-facing Gemini ids keep their own chain and are
+    # not duplicated at the end.
+    if any("gemini" in m.lower() for m in chain):
+        if not any(":free" in m.lower() or "/" in m.lower() for m in chain):
+            chain.append("google/gemini-3.5-flash")
     return chain
 
 
@@ -89,10 +149,9 @@ def _is_retryable(exc: ModelRouterError) -> bool:
         return False
     if exc.status_code in _RETRYABLE_STATUS:
         return True
-    # Model/Key/Quota errors (400, 401, 403, 404) should fall back to the next model
-    if exc.status_code in (400, 401, 403, 404):
-        return True
-    return False
+    # Everything with a status_code from the upstream provider is retryable: the
+    # chain moves to the next configured model for each one.
+    return True
 
 
 def _request_retryable_error(exc: Exception) -> ModelRouterError:
@@ -132,7 +191,9 @@ def complete(messages: list[dict], model: Optional[str] = None, temperature: flo
     """Non-streaming completion returning the full text reply.
 
     Tries the requested/default model first, then every configured fallback,
-    retrying only provider-side failures (402/429/5xx).
+    retrying only provider-side failures (402/429/5xx). A failure on one
+    provider/model moves to the next one so the user gets a real reply even
+    when the first provider is out of credit or temporarily unavailable.
     """
     last_error: Optional[ModelRouterError] = None
     for candidate in _model_chain(model):
@@ -173,36 +234,45 @@ def _complete_one(model: str, messages: list[dict], temperature: float) -> str:
         return data["choices"][0]["message"]["content"] or ""
 
     if provider == "openai":
-        if not settings.OPENAI_API_KEY:
-            raise ModelRouterError("OPENAI_API_KEY is not configured")
-        from openai import OpenAI
+        if settings.OPENAI_API_KEY:
+            from openai import OpenAI
 
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        resp = client.chat.completions.create(
-            model=model, messages=messages, temperature=temperature
-        )
-        return (resp.choices[0].message.content or "") if resp.choices else ""
+            client = OpenAI(api_key=settings.OPENAI_API_KEY)
+            resp = client.chat.completions.create(
+                model=model, messages=messages, temperature=temperature
+            )
+            return (resp.choices[0].message.content or "") if resp.choices else ""
+        # Missing OpenAI key but OPENROUTER_AUTO_FALLBACK is on (or the provider
+        # was already switched to OpenRouter by _effective_provider) → falls
+        # through to the OpenRouter block below.
+        raise ModelRouterError(
+            "OPENAI_API_KEY is not configured"
+        ) from None
 
     if provider == "anthropic":
-        if not settings.ANTHROPIC_API_KEY:
-            raise ModelRouterError("ANTHROPIC_API_KEY is not configured")
-        from anthropic import Anthropic
+        if settings.ANTHROPIC_API_KEY:
+            from anthropic import Anthropic
 
-        client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-        system, claude_messages = _split_system(messages)
-        resp = client.messages.create(
-            model=model,
-            max_tokens=8192,
-            system=system or None,
-            messages=claude_messages,
-            temperature=temperature,
-        )
-        return "".join(b.text for b in resp.content if b.type == "text") or ""
+            client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+            system, claude_messages = _split_system(messages)
+            resp = client.messages.create(
+                model=model,
+                max_tokens=8192,
+                system=system or None,
+                messages=claude_messages,
+                temperature=temperature,
+            )
+            return "".join(b.text for b in resp.content if b.type == "text") or ""
+        raise ModelRouterError(
+            "ANTHROPIC_API_KEY is not configured"
+        ) from None
 
     if provider == "google":
-        if not settings.GOOGLE_AI_KEY:
-            raise ModelRouterError("GOOGLE_AI_KEY is not configured")
-        return _google_complete(model, messages, temperature)
+        if settings.GOOGLE_AI_KEY:
+            return _google_complete(model, messages, temperature)
+        raise ModelRouterError(
+            "GOOGLE_AI_KEY is not configured"
+        ) from None
 
     raise ModelRouterError(f"Cannot route model {model!r}")
 
@@ -222,7 +292,9 @@ def complete_with_tools(
       - ``tool_calls``: list of {"id", "name", "arguments"} or []
 
     Tries the requested/default model first, then every configured fallback,
-    retrying only provider-side failures (402/429/5xx).
+    retrying only provider-side failures (402/429/5xx). A failure on one
+    provider/model moves to the next one so the user gets a real reply even
+    when the first provider is out of credit or temporarily unavailable.
     """
     last_error: Optional[ModelRouterError] = None
     for candidate in _model_chain(model):
@@ -276,12 +348,18 @@ def _complete_with_tools_one(
                 raise ModelRouterError("OPENROUTER_API_KEY is not configured")
             headers = _openrouter_headers()
         else:
-            if not settings.OPENAI_API_KEY:
-                raise ModelRouterError("OPENAI_API_KEY is not configured")
-            headers = {
-                "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
-                "Content-Type": "application/json",
-            }
+            # The OpenAI path is kept only when OPENAI_API_KEY is actually set;
+            # otherwise the toggle routed us here as an OpenRouter retry and we
+            # re-raise so the chain / falls back to the OpenRouter path.
+            if settings.OPENAI_API_KEY:
+                headers = {
+                    "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
+                    "Content-Type": "application/json",
+                }
+            else:
+                raise ModelRouterError(
+                    "OPENAI_API_KEY is not configured"
+                ) from None
         try:
             with httpx.Client(timeout=120) as client:
                 resp = client.post(url, headers=headers, json=payload)
@@ -303,15 +381,17 @@ def _complete_with_tools_one(
         )
 
     if provider == "google":
-        if not settings.GOOGLE_AI_KEY:
-            raise ModelRouterError("GOOGLE_AI_KEY is not configured")
-        return _google_complete_with_tools(
-            messages=messages,
-            tools=tools,
-            model=model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
+        if settings.GOOGLE_AI_KEY:
+            return _google_complete_with_tools(
+                messages=messages,
+                tools=tools,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+        raise ModelRouterError(
+            "GOOGLE_AI_KEY is not configured"
+        ) from None
 
     raise ModelRouterError(f"Cannot route model {model!r} with native tools")
 
@@ -346,7 +426,9 @@ def stream(
     """Stream a completion, yielding text chunks.
 
     Tries the requested/default model first, then every configured fallback,
-    retrying only provider-side failures (402/429/5xx).
+    retrying only provider-side failures (402/429/5xx). A failure on one
+    provider/model moves to the next one so the user gets a real reply even
+    when the first provider is out of credit or temporarily unavailable.
     """
     last_error: Optional[ModelRouterError] = None
     for candidate in _model_chain(model):
@@ -412,46 +494,52 @@ def _stream_one(model: str, messages: list[dict], temperature: float) -> Iterato
         return
 
     if provider == "openai":
-        if not settings.OPENAI_API_KEY:
-            raise ModelRouterError("OPENAI_API_KEY is not configured")
-        from openai import OpenAI
+        if settings.OPENAI_API_KEY:
+            from openai import OpenAI
 
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        resp = client.chat.completions.create(
-            model=model, messages=messages, temperature=temperature, stream=True
-        )
-        for chunk in resp:
-            if not chunk.choices:
-                continue
-            content = chunk.choices[0].delta.content
-            if content:
-                yield content
-        return
+            client = OpenAI(api_key=settings.OPENAI_API_KEY)
+            resp = client.chat.completions.create(
+                model=model, messages=messages, temperature=temperature, stream=True
+            )
+            for chunk in resp:
+                if not chunk.choices:
+                    continue
+                content = chunk.choices[0].delta.content
+                if content:
+                    yield content
+            return
+        raise ModelRouterError(
+            "OPENAI_API_KEY is not configured"
+        ) from None
 
     if provider == "anthropic":
-        if not settings.ANTHROPIC_API_KEY:
-            raise ModelRouterError("ANTHROPIC_API_KEY is not configured")
-        from anthropic import Anthropic
+        if settings.ANTHROPIC_API_KEY:
+            from anthropic import Anthropic
 
-        client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-        system, claude_messages = _split_system(messages)
-        with client.messages.stream(
-            model=model,
-            max_tokens=8192,
-            system=system or None,
-            messages=claude_messages,
-            temperature=temperature,
-        ) as stream_ctx:
-            for text in stream_ctx.text_stream:
-                if text:
-                    yield text
-        return
+            client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+            system, claude_messages = _split_system(messages)
+            with client.messages.stream(
+                model=model,
+                max_tokens=8192,
+                system=system or None,
+                messages=claude_messages,
+                temperature=temperature,
+            ) as stream_ctx:
+                for text in stream_ctx.text_stream:
+                    if text:
+                        yield text
+            return
+        raise ModelRouterError(
+            "ANTHROPIC_API_KEY is not configured"
+        ) from None
 
     if provider == "google":
-        if not settings.GOOGLE_AI_KEY:
-            raise ModelRouterError("GOOGLE_AI_KEY is not configured")
-        yield from _google_stream(model, messages, temperature)
-        return
+        if settings.GOOGLE_AI_KEY:
+            yield from _google_stream(model, messages, temperature)
+            return
+        raise ModelRouterError(
+            "GOOGLE_AI_KEY is not configured"
+        ) from None
 
     raise ModelRouterError(f"Cannot route model {model!r}")
 

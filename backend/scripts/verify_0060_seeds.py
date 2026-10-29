@@ -1,7 +1,7 @@
 """Verify migration 0060 seeds against the live DB.
 
 Reads DATABASE_URL from backend/.env, then prints counts for:
-- the 11 new company roles (per org)
+- the 10 company roles (per org)
 - the 12 AI employees (per org)
 - the 14 dashboards + dashboard_role_access mapping
 - platform layer tables
@@ -14,7 +14,7 @@ from sqlalchemy import create_engine, text
 NEW_ROLES = (
     "'Company Admin', 'CEO / Executive', 'Sales Manager', 'Sales Executive', "
     "'HR Manager', 'Finance Manager', 'Accountant', 'Customer Support', "
-    "'Marketing Manager', 'Operations Manager', 'Employee/User'"
+    "'Marketing Manager', 'Operations Manager'"
 )
 
 

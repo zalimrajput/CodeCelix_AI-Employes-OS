@@ -2,15 +2,13 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { Loader2, Plus, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import Link from "next/link";
 import { EmployeeCard } from "@/components/ai/employee-card";
 import { ModuleWidgets } from "@/components/dashboard/module-widgets";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchAIEmployees } from "@/services/data";
-import { toast } from "sonner";
 
 const ROLES = ["All", "Marketing", "Sales", "Support", "Finance", "HR", "Executive"];
 
@@ -21,7 +19,6 @@ export default function AIEmployeesPage() {
   });
   const [filter, setFilter] = useState("All");
   const [query, setQuery] = useState("");
-  const [hiring, setHiring] = useState(false);
 
   const employees = data?.source === "db" ? data.items : [];
   const filtered = employees.filter((e) => {
@@ -30,14 +27,6 @@ export default function AIEmployeesPage() {
     const matchesQuery = !q || e.name.toLowerCase().includes(q) || e.role.toLowerCase().includes(q);
     return matchesRole && matchesQuery;
   });
-
-  function handleHire() {
-    setHiring(true);
-    setTimeout(() => {
-      setHiring(false);
-      toast.success("AI employee deployed! Check the grid in a moment.");
-    }, 1400);
-  }
 
   return (
     <div className="space-y-6">
@@ -51,10 +40,6 @@ export default function AIEmployeesPage() {
             Specialized agents that execute real business work — emails, CRM, invoices, meetings.
           </p>
         </div>
-        <Button onClick={handleHire} disabled={hiring}>
-          {hiring ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-          {hiring ? "Deploying…" : "Hire AI Employee"}
-        </Button>
       </div>
 
       {/* Filters */}
@@ -97,6 +82,11 @@ export default function AIEmployeesPage() {
               <EmployeeCard employee={emp} index={i} />
             </Link>
           ))}
+          {filtered.length === 0 && (
+            <p className="col-span-full rounded-2xl border border-border-soft bg-card-soft/40 p-8 text-center text-sm text-slate-500">
+              No AI employees here yet.
+            </p>
+          )}
         </div>
       )}
 

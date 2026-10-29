@@ -43,11 +43,12 @@ export interface DashboardDef {
   gradient: string;
 }
 
-/** Legacy names (migration 0059) normalized to their 12-role equivalents. */
+/** Legacy names (migration 0059) normalized to their current equivalents.
+ *  Legacy "Employee" is intentionally left as-is: the Employee/User role it
+ *  used to point to was removed, so old staff keep the personal dashboard. */
 const LEGACY_MAP: Record<string, UserRole> = {
   [ROLES.LEGACY_OWNER]: ROLES.COMPANY_ADMIN,
   [ROLES.LEGACY_ADMIN]: ROLES.COMPANY_ADMIN,
-  [ROLES.LEGACY_EMPLOYEE]: ROLES.EMPLOYEE,
 };
 
 function normalize(roles: string[] | undefined | null): UserRole[] {
@@ -166,7 +167,9 @@ export const DASHBOARDS: DashboardDef[] = [
     description: "Personal tasks, deadlines, and AI assistant access.",
     href: "/dashboard/employee",
     icon: Briefcase,
-    roles: [ROLES.EMPLOYEE],
+    // Legacy migration-0059 "Employee" role only — the assignable
+    // "Employee/User" role it used to share this page with was removed.
+    roles: [ROLES.LEGACY_EMPLOYEE],
     group: "personal",
     gradient: "from-primary to-success",
   },

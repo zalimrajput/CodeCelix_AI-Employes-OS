@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.ai import executor
 from app.ai import model_router
-from app.ai.model_router import ModelRouterError
+from app.ai.model_router import ModelRouterError, _is_retryable
 from app.ai.tools import get_tool
 
 logger = logging.getLogger("app.ai.engine")
@@ -136,6 +136,8 @@ def run_agent(
     )
     tools = _openai_tools(agent.allowed_tools)
     native = True
+    retried_steps: set[int] = set()
+    retry_budget = 1  # one transient-retry per step; refilled by every success
 
     for step in range(MAX_STEPS):
         if step:
@@ -159,11 +161,73 @@ def run_agent(
                 )
                 native = False
                 continue
+            if isinstance(exc, ModelRouterError) and exc.status_code == 402:
+                logger.warning(
+                    "model_router OpenRouter 402 on step %s; refilling retry budget and retrying",
+                    step,
+                )
+                retry_budget = 1
+                retried_steps.add(step)
+                continue
+            if isinstance(exc, ModelRouterError) and not _is_retryable(exc):
+                logger.warning(
+                    "model_router non-retryable failure on step %s: %s",
+                    step, exc, exc_info=True,
+                )
+                detail = str(exc).strip() or exc.__class__.__name__
+                return (
+                    "Sorry, the language model is temporarily unavailable "
+                    f"({exc.__class__.__name__}: {detail[:160]}). "
+                    "Please try again in a moment."
+                )
+
+            # Transient provider-side failures (429 / 5xx / in-fight budget 
+            # exhaustion) are worth one retry per step so a single hiccup 
+            # does not kill the whole turn. The per-step retry budget is 
+            # refilled by every successful step, so a permanently failing 
+            # model still returns the apology quickly.
+            if retry_budget > 0:
+                retried_steps.add(step)
+                retry_budget -= 1
+                logger.warning(
+                    "model_router transient failure on step %s: %s",
+                    step, exc, exc_info=True,
+                )
+                continue
             logger.warning("model_router failure: %s", exc, exc_info=True)
+            # Include the real detail — a bare class name made incidents like
+            # an invalid model key impossible to diagnose from chat alone.
+            #
+            # OpenAI / Anthropic / Google errors are description-only (no status_code).
+            # We only surface the raw detail for those so the user sees which provider
+            # / model broke. OpenRouter errors (those that reach here with a status_code)
+            # are already formatted in ModelRouterError with the upstream detail embedded,
+            # so we keep the existing short template instead of re-printing the full JSON.
+            detail = str(exc).strip() or exc.__class__.__name__
             return (
                 "Sorry, the language model is temporarily unavailable "
-                f"({exc.__class__.__name__}). Please try again in a moment."
+                f"({exc.__class__.__name__}: {detail[:160]}). "
+                "Please try again in a moment."
             )
+            if retry_budget > 0:
+                retried_steps.add(step)
+                retry_budget -= 1
+                logger.warning(
+                    "model_router transient failure on step %s: %s",
+                    step, exc, exc_info=True,
+                )
+                continue
+            logger.warning("model_router failure: %s", exc, exc_info=True)
+            # Include the real detail — a bare class name made incidents like
+            # an invalid model key impossible to diagnose from chat alone.
+            detail = str(exc).strip() or exc.__class__.__name__
+            return (
+                "Sorry, the language model is temporarily unavailable "
+                f"({exc.__class__.__name__}: {detail[:160]}). "
+                "Please try again in a moment."
+            )
+
+        retry_budget = 1
 
         call = None
         if result.get("tool_calls"):
